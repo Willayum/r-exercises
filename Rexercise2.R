@@ -1,3 +1,9 @@
+    trees_acre = trees_acre / n(),
+    basal_area_acre = basal_area_acre / n(),
+    volume_acre = volume_acre / n()
+
+
+
 install.packages("tidyr")
 install.packages("data.table")
 install.packages("ggplot2")
