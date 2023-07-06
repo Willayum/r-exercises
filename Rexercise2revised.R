@@ -16,17 +16,16 @@ plot_data <- poplar %>%
   ) %>%
   mutate(
     qmd = sqrt((basal_area_acre / trees_acre) / 0.005454),
-    trees_acre = trees_acre / n(),
-    basal_area_acre = basal_area_acre / n(),
-    volume_acre = volume_acre / n()
-  )
+    CN = as.character(CN)
+  ) %>%
+    add_row(summarise_all(., ~if(is.numeric(.)) sum(., na.rm = TRUE) else "Total"))
 
 overall_totals <- colSums(plot_data[, c("CN", "trees_acre", "basal_area_acre", "volume_acre", "qmd")], na.rm = TRUE)
 plot_data <- rbind(plot_data, overall_totals)
 
 n <- nrow(plot_data)
 t_value <- qt(0.975, df = n - 1)
-se <- apply(plot[, c("trees_acre", "basal_area_acre", "volume_acre", "qmd")], 2, sd) / sqrt(n)
+se <- apply(plot_summaries[, c("trees_acre", "basal_area_acre", "volume_acre", "qmd")], 2, sd) / sqrt(n)
 lower_ci <- colMeans(plot_data[, c("trees_acre", "basal_area_acre", "volume_acre", "qmd")], na.rm = TRUE) - t_value * se
 upper_ci <- colMeans(plot_data[, c("trees_acre", "basal_area_acre", "volume_acre", "qmd")], na.rm = TRUE) + t_value * se
 
@@ -72,3 +71,46 @@ species_percent <- poplar %>%
 sweetgum <- fread("\\Users\\wetzl\\Downloads\\SWEETGUM_YELLOW_POPLAR_PLOTS.csv")
 poplar$ecodivision <- as.integer(poplar$ecodivision)
 gumpoplar <- bind_rows(poplar, sweetgum)
+species_abundance <- table(gumpoplar$common_name)
+species_abundance <- sort(species_abundance)
+
+species_table <- gumpoplar %>%
+  group_by(common_name) %>%
+  summarise(
+    species_abundance = n(),
+            mean_dbh = mean(dia),
+            mean_vol = mean(volcfgrs, na.rm = TRUE),
+            mean_BA = mean(BA)
+  )
+tree_ranks <- rank(species_abundance)
+tree_colours <- colorRampPalette(c("green", "red"))(max(tree_ranks))
+colour_mapping <- setNames(tree_colours, names(species_abundance))
+small_constant <- 0.001
+gumpoplar_filtered <- gumpoplar %>%
+  filter(!is.na(volcfgrs) & !is.na(BA))
+### Graphs
+ggplot(gumpoplar, aes(x = reorder(common_name, dia), y = dia, colour = common_name)) +
+  geom_boxplot() +
+  scale_colour_manual(values = colour_mapping) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, colour = "black")) +
+  xlab("Species") +
+  ylab("DBH (in)") +
+  ggtitle("Species by DBH and Abundance") +
+  labs(colour = "Species Abundance")
+
+ggplot(species_table, aes(x = common_name, y = mean_dbh, colour = log
+ (ifelse(species_abundance == 1, small_constant, species_abundance)))) +
+  geom_point() + scale_color_gradient(low = "yellow", high = "red") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, colour = "black")) +
+  xlab("Species") +
+  ylab("Mean DBH (in)") +
+  ggtitle("Species by Mean DBH") +
+  labs(colour = "Species Abundance")
+
+ggplot(gumpoplar_filtered, aes(x = volcfgrs, y = BA, size = dia, colour = dia)) +
+  geom_point(shape = 1) +
+  scale_color_continuous(low = "green", high = "red") +
+  facet_wrap(~ common_name) +
+   labs(x = expression(Volume~(ft^3)), y = expression(BA~(ac^2)), size = "DBH (in)", colour = "DBH (in)") +
+  ggtitle("Volume by BA, Species, and DBH")
+
