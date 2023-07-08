@@ -10,7 +10,7 @@ poplar <- fread("C:\\Users\\wetzl\\Downloads\\YELLOW_POPLAR_PLOTS.csv")
 # Part 1
 plot_data <- poplar %>%
   group_by(CN) %>%
-  summarise(
+  summarise( observations = n(),
     trees_acre = sum(tpa_unadj),
     basal_area_acre = sum(BA * tpa_unadj),
     volume_acre = sum(volcfgrs * tpa_unadj, na.rm = TRUE)
@@ -19,10 +19,10 @@ plot_data <- poplar %>%
     qmd = sqrt((basal_area_acre / trees_acre) / 0.005454),
     CN = as.character(CN)
   )
-overall_means <- colMeans(plot_data[, c("trees_acre", "basal_area_acre", "volume_acre", "qmd")], na.rm = TRUE)
+overall_means <- colMeans(plot_data[, c("observations", "trees_acre", "basal_area_acre", "volume_acre", "qmd")], na.rm = TRUE)
 overall_means_df <- data.frame(t(overall_means))
 overall_means_df$CN <- "All"
-overall_means_df <- overall_means_df[c("CN", "trees_acre", "basal_area_acre", "volume_acre", "qmd")]
+overall_means_df <- overall_means_df[c("CN", "observations", "trees_acre", "basal_area_acre", "volume_acre", "qmd")]
 
 plot_summary <- rbind(plot_data, overall_means_df)
 
@@ -40,41 +40,68 @@ poplar$dbh <- ceiling(poplar$dia/class_width) * class_width
 stand_table <- poplar %>%
   mutate(DBH_Class = cut(dbh, breaks = seq(1, max(dbh) + class_width, by = class_width), include.lowest = TRUE)) %>%
   group_by(DBH_Class) %>%
-  summarise(trees_acre = sum(tpa_unadj)/n,
-            BA_acre = sum(BA*tpa_unadj)/n, vol_acre = sum(volcfgrs*tpa_unadj, na.rm = TRUE)/n) %>%
+  summarise(observations = n(),
+            trees_acre = sum(tpa_unadj)/n,
+            BA_acre = sum(BA*tpa_unadj)/n,
+            vol_acre = sum(volcfgrs*tpa_unadj, na.rm = TRUE)/n,
+  ) %>%
   ungroup()
 
 stand_table <- stand_table %>%
-  summarise(trees_acre = sum(trees_acre),
+  summarise(observations = sum(observations),
+            trees_acre = sum(trees_acre),
             BA_acre = sum(BA_acre),
-            vol_acre = sum(vol_acre)) %>%
+            vol_acre = sum(vol_acre),
+  ) %>%
   mutate(DBH_Class = "All") %>%
   bind_rows(stand_table, .) %>% as.data.frame()
 
 stock_table <- poplar %>%
-  group_by(common_name) %>%
-  summarise(n = n(), mean_tpa = mean(tpa_unadj), mean_BA = mean(BA), mean_vol = mean(volcfgrs, na.rm = TRUE)) %>%
-  add_row(summarise_all(., ~if(is.numeric(.)) sum(., na.rm = TRUE) else "Total"))
+   group_by(common_name) %>%
+  summarise(observations = n(),
+            trees_acre = sum(tpa_unadj)/n,
+            BA_acre = sum(BA*tpa_unadj)/n,
+            vol_acre = sum(volcfgrs*tpa_unadj, na.rm = TRUE)/n,
+  )%>%
+  ungroup()
+
+stock_table <- stock_table %>%
+  summarise(observations = sum(observations),
+            trees_acre = sum(trees_acre),
+            BA_acre = sum(BA_acre),
+            vol_acre = sum(vol_acre),
+  ) %>%
+  mutate(common_name = "All") %>%
+  bind_rows(stock_table, .) %>% as.data.frame()
+  #group_by(common_name) %>%
+  #summarise(, mean_tpa = mean(tpa_unadj), mean_BA = mean(BA), mean_vol = mean(volcfgrs, na.rm = TRUE)) %>%
+  #add_row(summarise_all(., ~if(is.numeric(.)) sum(., na.rm = TRUE) else "Total"))
 
 # Part 3
-species_percent <- poplar %>%
+stock_percent <- poplar %>%
   group_by(common_name) %>%
-  summarise(
-    trees_acre = sum(tpa_unadj),
-    basal_area_acre = sum(BA * tpa_unadj),
-    volume_acre = sum(volcfgrs * tpa_unadj, na.rm = TRUE)
+  summarise(observations = n(),
+            trees_acre = sum(tpa_unadj)/n,
+            BA_acre = sum(BA*tpa_unadj)/n,
+            vol_acre = sum(volcfgrs*tpa_unadj, na.rm = TRUE)/n,
+            qmd = sqrt((BA_acre / trees_acre) / 0.005454)
+  )%>%
+  mutate(percent_ta = trees_acre / sum(trees_acre) * 100,
+            percent_baa = BA_acre / sum(BA_acre) * 100,
+            percent_vola = vol_acre / sum(vol_acre, na.rm = TRUE) * 100
+  ) %>% ungroup()
+stock_percent <- stock_percent %>%
+  summarise(observations = sum(observations),
+            trees_acre = sum(trees_acre),
+            BA_acre = sum(BA_acre),
+            vol_acre = sum(vol_acre),
+            qmd = sum(qmd),
+            percent_ta = sum(percent_ta),
+            percent_baa = sum(percent_baa),
+            percent_vola = sum(percent_vola)
   ) %>%
-  mutate(
-     qmd = sqrt((basal_area_acre / trees_acre) / 0.005454),
-    trees_acre = trees_acre / n(),
-    basal_area_acre = basal_area_acre / n(),
-    volume_acre = volume_acre / n(),
-    percent_ta = trees_acre / sum(trees_acre) * 100,
-    percent_baa = basal_area_acre / sum(basal_area_acre) * 100
-  ) %>%
-   arrange(desc(trees_acre)) %>%
-  add_row(summarise_all(., ~if(is.numeric(.)) sum(., na.rm = TRUE) else "Total"))
-
+  mutate(common_name = "All") %>%
+  bind_rows(stock_percent, .) %>% as.data.frame()
 # Post analysis
 sweetgum <- fread("\\Users\\wetzl\\Downloads\\SWEETGUM_YELLOW_POPLAR_PLOTS.csv")
 poplar$ecodivision <- as.integer(poplar$ecodivision)
