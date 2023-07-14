@@ -3,6 +3,7 @@ library(tidyr)
 library(data.table)
 library(ggplot2)
 library(dplyr)
+library(tibble)
 
 poplar <- fread("C:\\Users\\wetzl\\Downloads\\YELLOW_POPLAR_PLOTS.csv")
 # poplar <- fread("./YELLOW_POPLAR_PLOTS.csv")
@@ -39,80 +40,82 @@ class_width <- 2
 dclass <- round(round(poplar$dia*class_width,0)/class_width,0)
 poplar <- poplar %>%
   mutate(DBH_Class = cut(dclass, breaks = seq(1, max(dclass) + class_width, by = class_width), include.lowest = TRUE))
-poplar$DBH_Class <- gsub("\\(|\\)|\\[|\\]", "", poplar$DBH_Class)  # Remove brackets
-poplar$DBH_Class <- gsub("^(\\d+),(\\d+)$", "(\\1,\\2)", poplar$DBH_Class)
-poplar$DBH_Class <- gsub("^(\\d+)-(\\d+)$", "(\\1,\\2)", poplar$DBH_Class)
+# poplar$DBH_Class <- gsub("\\(|\\)|\\[|\\]", "", poplar$DBH_Class)  #normalizes all brackets
+# poplar$DBH_Class <- gsub("^(\\d+),(\\d+)$", "(\\1,\\2)", poplar$DBH_Class)
+# poplar$DBH_Class <- gsub("^(\\d+)-(\\d+)$", "(\\1,\\2)", poplar$DBH_Class)
 
-s.t._groupby_se <- poplar %>%
-  group_by(DBH_Class) %>%
-  summarise(
-    percent_se_tpa = (sd(tpa_unadj) / sqrt(n())) / (mean(tpa_unadj)) * 100,
-    percent_se_vol_acre = (sd(volcfgrs * tpa_unadj) / sqrt(n())) / (mean(volcfgrs * tpa_unadj)) * 100
-  )
-
-# class1 <- poplar %>%
-#   filter(poplar$DBH_Class == dfilter) %>%
-#   summarise(
-#     DBH_Class = DBH_Class,
-#     tpa = tpa_unadj,
-#     vol_acre = volcfgrs*tpa_unadj
-#   )
-
-# dfilter <- filter(dseq, dseq == x-1 | dseq == x+1)
-# dseq <- seq(from = 2, to = 34, by = 2)
-# standard_error <- function(x) {
-#   n <- length(x)
-#   se <- sd(x) / sqrt(n)
-#   return(se)
-# }
-
-# class1_sum <- class1 %>%
-#   summarise(
-#     count = n(),
-#     trees_acre = sum(tpa_unadj)/n(),
-#     BA_acre = sum(BA*tpa_unadj)/n(),
-#     vol_acre = sum(volcfgrs*tpa_unadj, na.rm = TRUE)/n()
-#   )
-# se_trees <- sd(class1$tpa) / mean(class1$tpa) * 100
-# se_vol <- sd(class1$vol_acre) / mean(class1$vol_acre) * 100
-# class1_sum <- class1_sum %>%
-#   mutate(
-#     se_pct_trees = se_trees,
-#     se_pct_vol = se_vol
-#   )
-
-stand_table <- poplar %>%
+stand_table_se <- poplar %>%
   mutate(DBH_Class = cut(dclass, breaks = seq(1, max(dclass) + class_width, by = class_width), include.lowest = TRUE)) %>%
   group_by(DBH_Class) %>%
   summarise(count = n(),
             trees_acre = sum(tpa_unadj)/n,
+            percent_se_tpa = (sd(tpa_unadj) / sqrt(n())) / (mean(tpa_unadj)) * 100,
             BA_acre = sum(BA*tpa_unadj)/n,
             vol_acre = sum(volcfgrs*tpa_unadj, na.rm = TRUE)/n,
+            percent_se_vol_acre = (sd(volcfgrs * tpa_unadj) / sqrt(n())) / (mean(volcfgrs * tpa_unadj)) * 100
   ) %>%
   ungroup()
 
-# stand_test <- poplar %>%
-#   mutate(DBH_class = cut(dclass, breaks = seq(1, max(dclass) + class_width, by = class_width), include.lowest = TRUE)) %>%
-#   group_by(DBH_class) %>%
-#   summarise(trees_acre = tpa_unadj, vol_acre = volcfgrs*tpa_unadj) %>%
-#   filter(DBH_class == "(1,3)")
-#
-# stand_test_se <- apply(stand_test[stand_test$DBH_class !="All", c("trees_acre", "vol_acre")], 2, sd) / sqrt(n)
-# stand_table_se <- stand_table %>%
-#   rowwise() %>%
-#   mutate(
-#     se_trees = sd(trees_acre)/sqrt(count1),
-#     se_vol = sd(vol_acre)/sqrt(count1)
-#   )
-
-stand_table_sum <- stand_table %>%
+stand_table_se_sum <- stand_table_se %>%
   summarise(count = sum(count),
             trees_acre = sum(trees_acre),
+            percent_se_tpa = mean(percent_se_tpa, na.rm = TRUE),
             BA_acre = sum(BA_acre),
             vol_acre = sum(vol_acre),
+            percent_se_vol_acre = mean(percent_se_vol_acre, na.rm = TRUE)
   ) %>%
-  mutate(DBH_Class = "All") %>%
-  bind_rows(stand_table, .) %>% as.data.frame()
+  mutate(DBH_Class = "Sums, Means for SE's") %>%
+  bind_rows(stand_table_se, .) %>% as.data.frame()
+
+write.csv(stand_table_se_sum, "data.csv", row.names = FALSE)
+
+stand_table <- poplar %>%
+  mutate(DBH_Class = cut(dclass, breaks = seq(1, max(dclass) + class_width, by = class_width), include.lowest = TRUE)) %>%
+  group_by(DBH_Class) %>%
+  summarise(count1 = n(),
+            trees_acre = sum(tpa_unadj)/n,
+            BA_acre = sum(BA*tpa_unadj)/n,
+            vol_acre = sum(volcfgrs*tpa_unadj, na.rm = TRUE)/n
+
+  ) %>%
+  ungroup()
+##start of lapply method
+no_sum_data <- poplar %>%
+  mutate(DBH_Class = cut(dclass, breaks = seq(1, max(dclass) + class_width, by = class_width), include.lowest = TRUE)) %>%
+  group_by(DBH_Class) %>%
+  summarise(observations = n(),
+            trees_acre = tpa_unadj,
+            BA_acre = BA*tpa_unadj,
+            vol_acre = volcfgrs*tpa_unadj
+  ) %>%
+  ungroup()
+
+no_sum_data <- na.omit(no_sum_data)
+dsplit <- split(no_sum_data, no_sum_data$DBH_Class)
+
+percent_standard_error <- function(p1, column) {
+  se <- sd(p1[[column]]) / sqrt(nrow(p1))
+  percent_se <- (se / mean(p1[[column]])) * 100
+  return(percent_se)
+}
+
+trees_se_function <- function(p2) {
+  return(percent_standard_error(p2, 'trees_acre'))
+}
+tpa_se_class <- lapply(dsplit, trees_se_function)
+
+vol_acre_se_class <- lapply(dsplit, function(p3) percent_standard_error(p3, 'vol_acre'))
+
+se_table <- data.frame(
+  tpa_se = unlist(tpa_se_class),
+  vol_acre_se = unlist(vol_acre_se_class)
+)
+
+se_table <- rownames_to_column(se_table, var = "DBH_Class")
+rownames(se_table) <- NULL
+stand_table_lapply_se <- left_join(stand_table,se_table)
+
+### End of SE Assignment ###
 
 stock_table <- poplar %>%
    group_by(common_name) %>%
@@ -157,6 +160,7 @@ stock_percent_sum <- stock_percent %>%
   ) %>%
   mutate(common_name = "All") %>%
   bind_rows(stock_percent, .) %>% as.data.frame()
+
 # Post analysis
 sweetgum <- fread("\\Users\\wetzl\\Downloads\\SWEETGUM_YELLOW_POPLAR_PLOTS.csv")
 poplar$ecodivision <- as.integer(poplar$ecodivision)
@@ -234,24 +238,3 @@ ggplot(combined_stock, aes(x = "", y = percent_vola, fill = common_name)) +
   geom_text(aes(label = if_else(percent_vola >= 1, paste(round(percent_vola, 1), "%"), "")),
             position = position_stack(vjust = .5), size = 4) +
   theme_minimal()
-
-
-# sd_trees <- sd(poplar$tpa_unadj)
-# mean_trees <- mean(poplar$tpa_unadj)
-#
-# sd_vol <- sd(poplar$volcfgrs*poplar$tpa_unadj, na.rm=TRUE)
-# mean_vol <- mean(poplar$volcfgrs*poplar$tpa_unadj, na.rm=TRUE)
-#
-# stand_table <- poplar %>%
-#   mutate(DBH_Class = cut(dclass, breaks = seq(1, max(dclass) + class_width, by = class_width), include.lowest = TRUE)) %>%
-#   group_by(DBH_Class) %>%
-#   summarise(
-#     trees_acre = sum(tpa_unadj)/n(),
-#     vol_acre = sum(volcfgrs*tpa_unadj, na.rm=TRUE)/n()
-#   )
-#
-# stand_table <- stand_table %>%
-#   mutate(
-#     se_pct_trees = (sd_trees/mean_trees)*100,
-#     se_pct_vol = (sd_vol/mean_vol)*100
-#   )
