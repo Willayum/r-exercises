@@ -1,4 +1,4 @@
-install.packages(c("tidyr", "data.table", "ggplot2", "dplyr"))
+# install.packages(c("tidyr", "data.table", "ggplot2", "dplyr"))
 library(tidyr)
 library(data.table)
 library(ggplot2)
@@ -27,7 +27,7 @@ overall_means_df <- overall_means_df[c("CN", "count", "trees_acre", "basal_area_
 
 plot_summary <- rbind(plot_data, overall_means_df)
 
-n <- nrow(plot_data)
+n <- nrow(plot_data) #sum of all unique plots = 48
 
 t_value <- qt(0.975, df = n - 1)
 se <- apply(plot_data[plot_data$CN != "All", c("trees_acre", "basal_area_acre", "volume_acre", "qmd")], 2, sd) / sqrt(n)
@@ -36,38 +36,25 @@ upper_ci <- colMeans(plot_data[, c("trees_acre", "basal_area_acre", "volume_acre
 
 # Part 2
 class_width <- 2
-#poplar$dbh <- ceiling(poplar$dia/class_width) * class_width
-dclass <- round(round(poplar$dia*class_width,0)/class_width,0)
-poplar <- poplar %>%
-  mutate(DBH_Class = cut(dclass, breaks = seq(1, max(dclass) + class_width, by = class_width), include.lowest = TRUE))
-# poplar$DBH_Class <- gsub("\\(|\\)|\\[|\\]", "", poplar$DBH_Class)  #normalizes all brackets
-# poplar$DBH_Class <- gsub("^(\\d+),(\\d+)$", "(\\1,\\2)", poplar$DBH_Class)
-# poplar$DBH_Class <- gsub("^(\\d+)-(\\d+)$", "(\\1,\\2)", poplar$DBH_Class)
+# poplar$dbh <- ceiling(poplar$dia/class_width) * class_width
+# dclass <- round(round(poplar$dbh*class_width,0)/class_width,0)
 
-stand_table_se <- poplar %>%
-  mutate(DBH_Class = cut(dclass, breaks = seq(1, max(dclass) + class_width, by = class_width), include.lowest = TRUE)) %>%
-  group_by(DBH_Class) %>%
-  summarise(count = n(),
-            trees_acre = sum(tpa_unadj)/n,
-            percent_se_tpa = (sd(tpa_unadj) / sqrt(n())) / (mean(tpa_unadj)) * 100,
-            BA_acre = sum(BA*tpa_unadj)/n,
-            vol_acre = sum(volcfgrs*tpa_unadj, na.rm = TRUE)/n,
-            percent_se_vol_acre = (sd(volcfgrs * tpa_unadj) / sqrt(n())) / (mean(volcfgrs * tpa_unadj)) * 100
-  ) %>%
-  ungroup()
+##new
+dclass <- floor((poplar$dia + 1) / class_width) * class_width
+dclass[dclass > 34] <- 34
+poplar$DBH_Class <- paste0("[", dclass - 1, ",", dclass + 1, ")")
 
-stand_table_se_sum <- stand_table_se %>%
-  summarise(count = sum(count),
-            trees_acre = sum(trees_acre),
-            percent_se_tpa = mean(percent_se_tpa, na.rm = TRUE),
-            BA_acre = sum(BA_acre),
-            vol_acre = sum(vol_acre),
-            percent_se_vol_acre = mean(percent_se_vol_acre, na.rm = TRUE)
-  ) %>%
-  mutate(DBH_Class = "Sums, Means for SE's") %>%
-  bind_rows(stand_table_se, .) %>% as.data.frame()
+se <- apply(plot_data[plot_data$CN != "All", c("trees_acre", "basal_area_acre", "volume_acre", "qmd")], 2, sd) / sqrt(n)
 
-write.csv(stand_table_se_sum, "data.csv", row.names = FALSE)
+# plot_sums <- poplar %>%
+#   group_by(CN, poplar$DBH_CLass) %>%
+#   summarise(trees_acre = sum(tpa_unadj), vol_acre = sum(volcfgrs*tpa_unadj, na.rm = TRUE))
+#
+# plot_se <- plot_sums %>%
+#   group_by()
+# unique_class <- data.frame(unique(poplar$DBH_Class)) %>%
+#   arrange('DBH_Class') %>%
+#   rownames_to_column(var = "Class_Order")
 
 stand_table <- poplar %>%
   mutate(DBH_Class = cut(dclass, breaks = seq(1, max(dclass) + class_width, by = class_width), include.lowest = TRUE)) %>%
@@ -78,15 +65,95 @@ stand_table <- poplar %>%
             vol_acre = sum(volcfgrs*tpa_unadj, na.rm = TRUE)/n
 
   ) %>%
+  mutate(DBH_Class = str_replace(DBH_Class, "\\(", "["),
+         DBH_Class = str_replace(DBH_Class, "\\]", "\\)")) %>%
+
   ungroup()
-##start of lapply method
-no_sum_data <- poplar %>%
+
+dbh_classes <- list(
+  "[1,3)", "[3,5)", "[5,7)", "[7,9)", "[9,11)", "[11,13)", "[13,15)", "[15,17)",
+  "[17,19)", "[19,21)", "[21,23)", "[23,25)", "[25,27)", "[27,29)", "[29,31)",
+  "[31,33)", "[33,35)"
+)
+
+#something wrong, need to check every single part of the function call, especially the sd and se to make sure it is doing exactly what I want
+plot_by_dbh <- function(x) {
+  plot_data1 <- poplar %>%
+    filter(DBH_Class %in% x) %>%
+    group_by(CN) %>%
+    summarise(
+      count1 = n(),
+      trees_acre = sum(tpa_unadj),
+      basal_area_acre = sum(BA * tpa_unadj),
+      volume_acre = sum(volcfgrs * tpa_unadj, na.rm = TRUE)
+    ) %>%
+    mutate(
+      qmd = sqrt((basal_area_acre / trees_acre) / 0.005454),
+      CN = as.character(CN),
+      D_Order = x
+    )
+  sd_trees_acre <- sqrt(sum((plot_data1$trees_acre - (sum(plot_data1$trees_acre) / sum(plot_data1$count1)))^2) / nrow(plot_data1))
+  se_trees_acre <- sd_trees_acre / sqrt(n)
+  sd_volume_acre <- sd(plot_data1$volume_acre)
+  se_volume_acre <- sd(plot_data1$volume_acre) / sqrt(nrow(plot_data1))
+  se_df <- data.frame(DBH_Class = x, sd_trees_acre = sd_trees_acre, se_trees_acre = se_trees_acre,
+                      sd_volume_acre = sd_volume_acre, se_volume_acre = se_volume_acre)
+  return(se_df)
+}
+
+se_list <- lapply(dbh_classes, plot_by_dbh)
+DBH_se <-do.call(rbind,se_list)
+stand_table_se <- left_join(stand_table, DBH_se)
+
+
+se_test <- poplar %>%
+  group_by(CN, DBH_Class) %>%
+  summarise(
+    se_value = sd(tpa_unadj) / sqrt(n())
+  )
+
+# dseq <- seq(from = 2, to = 34, by = 2)
+# dfilter <- filter(dseq, dseq == X-1 | dseq == X+1)
+# class1 <- poplar %>%
+#   filter(poplar$DBH_Class == dfilter) %>%
+#   group_by(CN)
+#   summarise(
+#     DBH_Class = DBH_Class,
+#     tpa = tpa_unadj,
+#     vol_acre = volcfgrs*tpa_unadj
+#   )
+
+stand_table_se2 <- poplar %>%
   mutate(DBH_Class = cut(dclass, breaks = seq(1, max(dclass) + class_width, by = class_width), include.lowest = TRUE)) %>%
   group_by(DBH_Class) %>%
+  summarise(count = n(),
+            trees_acre = sum(tpa_unadj)/n,
+            percent_se_tpa = (sd(tpa_unadj) / sqrt(n())) / (mean(tpa_unadj)) * 100, #the sums in the sd are wrong, by dbh not by plot, also should just be 48 for /
+            BA_acre = sum(BA*tpa_unadj)/n,
+            vol_acre = sum(volcfgrs*tpa_unadj, na.rm = TRUE)/n,
+            percent_se_vol_acre = (sd(volcfgrs * tpa_unadj) / sqrt(n())) / (mean(volcfgrs * tpa_unadj)) * 100
+  ) %>%
+  ungroup()
+
+stand_table_se_sum <- stand_table_se2 %>%
+  summarise(count = sum(count),
+            trees_acre = sum(trees_acre),
+            percent_se_tpa = mean(percent_se_tpa, na.rm = TRUE),
+            BA_acre = sum(BA_acre),
+            vol_acre = sum(vol_acre),
+            percent_se_vol_acre = mean(percent_se_vol_acre, na.rm = TRUE)
+  ) %>%
+  mutate(DBH_Class = "Sums, Means for SE's") %>%
+  bind_rows(stand_table_se, .) %>% as.data.frame()
+
+##start of lapply method appears to be issue with no_sum_data weird output
+no_sum_data <- poplar %>%
+  mutate(DBH_Class = cut(dclass, breaks = seq(1, max(dclass) + class_width, by = class_width), include.lowest = TRUE)) %>%
+  group_by(CN) %>%
   summarise(observations = n(),
-            trees_acre = tpa_unadj,
-            BA_acre = BA*tpa_unadj,
-            vol_acre = volcfgrs*tpa_unadj
+            trees_acre = (tpa_unadj),
+            vol_acre = (volcfgrs*tpa_unadj),
+            DBH_Class = DBH_Class
   ) %>%
   ungroup()
 
